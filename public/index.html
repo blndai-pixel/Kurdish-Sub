@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ckb" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ژێرنووسی ڤیدیۆ</title>
+<style>
+:root{--bg:#0b0d0d;--panel:#111514;--line:#1f2927;--accent:#5fd0c4;--accent-bg:#12332e;--mut:#6f7876;--txt:#e8eeec}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--txt);font-family:"Noto Naskh Arabic","Segoe UI",Tahoma,sans-serif;min-height:100vh}
+.wrap{max-width:720px;margin:0 auto}
+.url{display:flex;gap:8px;padding:12px}
+.url input{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:12px;border-radius:12px;font-size:15px;direction:ltr}
+.btn{background:var(--accent);color:#06221f;border:0;padding:0 18px;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+#status{padding:0 14px 8px;color:var(--mut);font-size:14px;min-height:24px}
+.player{position:relative;aspect-ratio:16/9;background:#000}
+#yt{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.tap{position:absolute;inset:0;z-index:2}
+.sub{position:absolute;z-index:3;left:4%;right:4%;bottom:6%;text-align:center;pointer-events:none;font-size:clamp(16px,4.6vw,30px);font-weight:700;line-height:1.5;text-shadow:0 2px 8px #000,0 0 3px #000}
+.sub .tr{display:block;font-size:.62em;font-weight:500;color:#dfe;opacity:.9;direction:ltr}
+.sub .hl{color:var(--accent)}
+.bar{padding:14px 16px 6px;background:#000}
+input[type=range]{width:100%;accent-color:var(--accent);direction:ltr}
+.ctrl{display:flex;align-items:center;gap:14px;padding:6px 16px 14px;background:#000;direction:ltr;flex-wrap:wrap}
+.ctrl button{background:none;border:0;color:#fff;cursor:pointer;font-size:22px}
+.chip{border:1px solid #666;border-radius:10px;padding:5px 12px;font-family:monospace;font-size:15px;background:none;color:#fff}
+.time{font-family:monospace;color:#bbb;font-size:15px}
+.tabs{display:flex;gap:6px;align-items:center;padding:14px 12px;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}
+.tab{padding:10px 16px;border-radius:12px;color:#aab;cursor:pointer;white-space:nowrap;border:0;background:none;font-size:16px;font-family:inherit}
+.tab.on{background:var(--accent-bg);color:var(--accent)}
+.ico{border:1px solid var(--line);border-radius:12px;width:46px;height:46px;background:none;color:#ccc;cursor:pointer;font-size:18px}
+.ico.on{border-color:var(--accent);color:var(--accent)}
+.sp{flex:1}
+.head{display:flex;justify-content:space-between;padding:18px 20px;color:var(--mut);font-size:15px}
+#list{padding:0 14px 60px;max-height:48vh;overflow-y:auto}
+.row{padding:14px 16px;border-radius:18px;border:1px solid transparent;cursor:pointer;color:#5c6462;margin-bottom:6px}
+.row .l1{display:flex;justify-content:space-between;gap:12px;font-size:19px;line-height:1.7}
+.row .t{font-family:monospace;font-size:14px;white-space:nowrap;padding-top:6px}
+.row .l2{direction:ltr;text-align:left;font-size:16px;margin-top:6px;display:none;color:#aab}
+.row.on{background:#0f1c1a;border-color:#1d4a43;color:#fff}
+.row.on .t{color:var(--accent)}
+.row.on .l2.show{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <form class="url" id="f">
+    <button class="btn" type="submit">ژێرنووس بکە</button>
+    <input id="link" placeholder="لینکی یوتووب لێرە دابنێ…" autocomplete="off">
+  </form>
+  <div id="status"></div>
+
+  <div class="player">
+    <div id="yt"></div><div class="tap" id="tap"></div>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="bar"><input type="range" id="seek" min="0" max="1000" value="0"></div>
+  <div class="ctrl">
+    <button id="pp">▶</button>
+    <button id="b10">⟲10</button>
+    <button id="f10">10⟳</button>
+    <span class="time" id="time">0:00 / 0:00</span>
+    <button class="chip" id="spd">1.0×</button>
+  </div>
+
+  <div class="tabs">
+    <button class="ico on" id="tg" title="ژێرنووس">▭</button>
+    <button class="ico" id="dl" title="دابەزاندنی SRT">⤓</button>
+    <span class="sp"></span>
+    <button class="tab" data-m="off">ناچالاک</button>
+    <button class="tab" data-m="src" id="srcTab">ئەسڵی</button>
+    <button class="tab on" data-m="ku">کوردی</button>
+    <button class="tab" data-m="both">دووزمانە</button>
+  </div>
+  <div class="head"><span id="cnt">0 / 0</span><span>دەقی ڤیدیۆ</span></div>
+  <div id="list"></div>
+</div>
+
+<script>
+let player, data = null, mode = 'ku', subOn = true, active = -1, ready = false, pending = null;
+const $ = s => document.querySelector(s);
+const fmt = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const vid = u => (u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/) || [])[1];
+
+const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+window.onYouTubeIframeAPIReady = () => {
+  player = new YT.Player('yt', {
+    playerVars: { controls: 0, rel: 0, playsinline: 1, modestbranding: 1, iv_load_policy: 3, cc_load_policy: 0 },
+    events: { onReady: () => { ready = true; if (pending) load(pending); },
+              onStateChange: e => $('#pp').textContent = e.data === 1 ? '❚❚' : '▶' }
+  });
+};
+function load(id) { if (!ready) { pending = id; return; } player.loadVideoById(id); }
+
+$('#f').onsubmit = async e => {
+  e.preventDefault();
+  const id = vid($('#link').value.trim());
+  if (!id) return $('#status').textContent = 'لینکەکە دروست نییە';
+  $('#status').textContent = 'جاوەڕێ بە… ژێرنووس دەهێنرێت و وەردەگێڕدرێت';
+  try {
+    const r = await fetch('/api/transcript?v=' + id + '&lang=ckb');
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    data = j; active = -1;
+    try { $('#srcTab').textContent = new Intl.DisplayNames(['ckb'], { type: 'language' }).of(j.sourceLang.split('-')[0]) || 'ئەسڵی'; } catch {}
+    render(); load(id);
+    $('#status').textContent = j.title;
+  } catch (err) { $('#status').textContent = '⚠ ' + err.message; }
+};
+
+function render() {
+  $('#list').innerHTML = '';
+  data.lines.forEach((l, i) => {
+    const d = document.createElement('div'); d.className = 'row';
+    d.innerHTML = `<div class="l1"><span class="x"></span><span class="t">${fmt(l.start)}</span></div><div class="l2"></div>`;
+    d.querySelector('.x').textContent = l.tr; d.querySelector('.l2').textContent = l.text;
+    d.onclick = () => player.seekTo(l.start, true);
+    $('#list').appendChild(d);
+  });
+  applyMode();
+}
+function applyMode() {
+  if (!data) return;
+  document.querySelectorAll('.row').forEach((d, i) => {
+    const l = data.lines[i];
+    d.querySelector('.x').textContent = mode === 'src' ? l.text : l.tr;
+    d.querySelector('.l2').classList.toggle('show', mode === 'both');
+  });
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.m === mode));
+  showSub();
+}
+function showSub() {
+  const el = $('#sub');
+  if (!data || !subOn || mode === 'off' || active < 0) { el.innerHTML = ''; return; }
+  const l = data.lines[active];
+  el.innerHTML = '';
+  const a = document.createElement('div'); a.textContent = mode === 'src' ? l.text : l.tr; el.appendChild(a);
+  if (mode === 'both') { const b = document.createElement('span'); b.className = 'tr'; b.textContent = l.text; el.appendChild(b); }
+}
+
+setInterval(() => {
+  if (!ready || !player.getCurrentTime) return;
+  const t = player.getCurrentTime(), D = player.getDuration() || 0;
+  $('#time').textContent = fmt(t) + ' / ' + fmt(D);
+  if (D && !seeking) $('#seek').value = t / D * 1000;
+  if (!data) return;
+  let idx = -1;
+  for (let i = 0; i < data.lines.length; i++) {
+    if (data.lines[i].start <= t + 0.05) idx = i; else break;
+  }
+  if (idx >= 0 && t > data.lines[idx].end + 1.5) idx = -1;
+  if (idx !== active) {
+    active = idx;
+    document.querySelectorAll('.row').forEach((d, i) => d.classList.toggle('on', i === idx));
+    if (idx >= 0) document.querySelectorAll('.row')[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    $('#cnt').textContent = (idx + 1) + ' / ' + data.lines.length;
+    showSub();
+  }
+}, 150);
+
+let seeking = false;
+$('#seek').oninput = () => { seeking = true; };
+$('#seek').onchange = e => { player.seekTo(e.target.value / 1000 * player.getDuration(), true); seeking = false; };
+const toggle = () => player.getPlayerState() === 1 ? player.pauseVideo() : player.playVideo();
+$('#pp').onclick = $('#tap').onclick = toggle;
+$('#b10').onclick = () => player.seekTo(player.getCurrentTime() - 10, true);
+$('#f10').onclick = () => player.seekTo(player.getCurrentTime() + 10, true);
+const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2]; let si = 2;
+$('#spd').onclick = () => { si = (si + 1) % speeds.length; player.setPlaybackRate(speeds[si]); $('#spd').textContent = speeds[si].toFixed(1) + '×'; };
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { mode = t.dataset.m; applyMode(); });
+$('#tg').onclick = () => { subOn = !subOn; $('#tg').classList.toggle('on', subOn); showSub(); };
+
+$('#dl').onclick = () => {
+  if (!data) return;
+  const ts = x => { const h = Math.floor(x / 3600), m = Math.floor(x % 3600 / 60), s = Math.floor(x % 60), ms = Math.round(x % 1 * 1000);
+    return [h, m, s].map(n => String(n).padStart(2, '0')).join(':') + ',' + String(ms).padStart(3, '0'); };
+  const srt = data.lines.map((l, i) => `${i + 1}\n${ts(l.start)} --> ${ts(Math.min(l.end, data.lines[i + 1]?.start ?? l.end))}\n${l.tr}\n`).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([srt], { type: 'text/plain;charset=utf-8' }));
+  a.download = 'subtitle-ckb.srt'; a.click();
+};
+</script>
+</body>
+</html>
